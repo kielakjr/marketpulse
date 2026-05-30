@@ -1,4 +1,4 @@
-package com.kielakjr.ingestion_service;
+package com.marketpulse.ingestion_service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

@@ -10,14 +10,15 @@
 		<relativePath/>
 	</parent>
 
-	<groupId>com.kielakjr</groupId>
+	<groupId>com.marketpulse</groupId>
 	<artifactId>marketpulse</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<packaging>pom</packaging>
 
 	<modules>
+		<module>common</module>
 		<module>ingestion-service</module>
-	</modules>
+    </modules>
 
 	<properties>
 		<java.version>25</java.version>
