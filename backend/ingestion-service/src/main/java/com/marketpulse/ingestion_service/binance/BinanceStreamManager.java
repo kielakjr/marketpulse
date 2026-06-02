@@ -6,12 +6,11 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketMessage;
-import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClient;
 import org.springframework.web.reactive.socket.client.WebSocketClient;
+import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 import java.net.URI;
-import java.time.Duration;
 
 @Component
 @Slf4j
@@ -22,15 +21,22 @@ public class BinanceStreamManager {
 
     private final BinanceProperties binanceProperties;
     private final BinanceMessageHandler messageHandler;
-    private final WebSocketClient webSocketClient = new ReactorNettyWebSocketClient();
+    private final WebSocketClient webSocketClient;
+    private final Retry reconnectRetry;
 
     @EventListener(ApplicationReadyEvent.class)
     public void connectAll() {
-        binanceProperties.symbols().forEach(symbol -> connectSymbol(symbol.toLowerCase()));
+        binanceProperties.symbols().forEach(symbol -> {
+            String stream = symbol.toLowerCase();
+            connect(stream).subscribe(
+                    null,
+                    e -> log.error("[{}] Fatal error, stream terminated", stream, e)
+            );
+        });
     }
 
-    private void connectSymbol(String symbol) {
-        webSocketClient.execute(
+    public Mono<Void> connect(String symbol) {
+        return webSocketClient.execute(
                         URI.create(WS_URL.formatted(symbol)),
                         session -> session.receive()
                                 .map(WebSocketMessage::getPayloadAsText)
@@ -39,17 +45,6 @@ public class BinanceStreamManager {
                                 .then()
                 )
                 .doOnError(e -> log.error("[{}] Connection failed", symbol, e))
-                .retryWhen(
-                        Retry.backoff(Long.MAX_VALUE, Duration.ofSeconds(1))
-                                .maxBackoff(Duration.ofSeconds(30))
-                                .doBeforeRetry(signal -> log.info(
-                                        "[{}] Reconnecting, attempt {}",
-                                        symbol, signal.totalRetries() + 1
-                                ))
-                )
-                .subscribe(
-                        null,
-                        e -> log.error("[{}] Fatal error, stream terminated", symbol, e)
-                );
+                .retryWhen(reconnectRetry);
     }
 }
