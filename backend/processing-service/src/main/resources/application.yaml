@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: processing-service
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: processing-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.marketpulse.common.*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+marketpulse:
+  price-window:
+    ttl: 24h
+
+server:
+  port: 8082
