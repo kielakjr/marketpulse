@@ -19,6 +19,7 @@
 		<module>common</module>
 		<module>ingestion-service</module>
 		<module>processing-service</module>
+		<module>websocket-gateway</module>
     </modules>
 
 	<properties>

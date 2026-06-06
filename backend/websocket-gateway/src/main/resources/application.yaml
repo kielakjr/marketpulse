@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: websocket-gateway
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: websocket-gateway
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.marketpulse.common.*"
+
+server:
+  port: 8084
