@@ -32,13 +32,18 @@ public class ExplanationConsumer {
 
     @KafkaListener(topics = "market.anomalies.major", groupId = "explanation-service")
     public void onAnomaly(AnomalyAlert alert) {
+        String symbol = null;
+        boolean acquired = false;
         try {
-            String symbol = alert.symbol();
+            symbol = alert.symbol();
 
-            if (cooldownService.isOnCooldown(symbol)) {
+            // Claim the cooldown up front so a burst for the same symbol triggers
+            // at most one (paid) LLM call, even under redelivery or concurrency.
+            if (!cooldownService.tryAcquire(symbol)) {
                 log.info("[{}] On cooldown, skipping", symbol);
                 return;
             }
+            acquired = true;
 
             log.info("[{}] Calling LLM, zScore={}", symbol, alert.zScore());
             LlmResponse response = llmClient.explain(alert);
@@ -64,11 +69,13 @@ public class ExplanationConsumer {
                     response.sources(),
                     alert.timestamp());
             kafkaTemplate.send(EXPLANATIONS_TOPIC, symbol, explanation);
-
-            cooldownService.setCooldown(symbol);
         } catch (Exception e) {
+            // Release the cooldown we claimed so a transient failure can be retried.
+            if (acquired) {
+                cooldownService.clear(symbol);
+            }
             log.error("Failed to process anomaly for {}",
-                    alert != null ? alert.symbol() : "unknown", e);
+                    symbol != null ? symbol : "unknown", e);
         }
     }
 }

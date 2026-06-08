@@ -19,12 +19,23 @@ public class CooldownService {
 
     private final StringRedisTemplate redisTemplate;
 
-    public boolean isOnCooldown(String symbol) {
-        return Boolean.TRUE.equals(redisTemplate.hasKey(key(symbol)));
+    /**
+     * Atomically claims the cooldown for a symbol. Returns {@code true} when the
+     * caller acquired it (the symbol was not on cooldown) and {@code false} when
+     * it is already on cooldown. Backed by Redis {@code SET key value NX EX}, so
+     * concurrent callers never both acquire.
+     */
+    public boolean tryAcquire(String symbol) {
+        return Boolean.TRUE.equals(
+                redisTemplate.opsForValue().setIfAbsent(key(symbol), "1", TTL));
     }
 
-    public void setCooldown(String symbol) {
-        redisTemplate.opsForValue().set(key(symbol), "1", TTL);
+    /**
+     * Releases a previously acquired cooldown so the symbol can be retried, e.g.
+     * after the LLM call fails.
+     */
+    public void clear(String symbol) {
+        redisTemplate.delete(key(symbol));
     }
 
     private static String key(String symbol) {

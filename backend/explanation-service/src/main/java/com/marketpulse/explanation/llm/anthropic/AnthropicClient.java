@@ -29,20 +29,22 @@ public class AnthropicClient implements LlmClient {
 
     private static final String MESSAGES_URL = "https://api.anthropic.com/v1/messages";
     private static final String ANTHROPIC_VERSION = "2023-06-01";
-    private static final String MODEL = "claude-sonnet-4-20250514";
     private static final int MAX_TOKENS = 1024;
 
     private final RestClient restClient;
+    private final String model;
     private final PromptBuilder promptBuilder;
 
     public AnthropicClient(RestClient.Builder builder,
                            @Value("${anthropic.api-key}") String apiKey,
+                           @Value("${anthropic.model}") String model,
                            PromptBuilder promptBuilder) {
         this.restClient = builder
                 .baseUrl(MESSAGES_URL)
                 .defaultHeader("x-api-key", apiKey)
                 .defaultHeader("anthropic-version", ANTHROPIC_VERSION)
                 .build();
+        this.model = model;
         this.promptBuilder = promptBuilder;
     }
 
@@ -50,7 +52,7 @@ public class AnthropicClient implements LlmClient {
     public LlmResponse explain(AnomalyAlert alert) {
         String prompt = promptBuilder.build(alert);
         var request = new MessageRequest(
-                MODEL,
+                model,
                 MAX_TOKENS,
                 List.of(new Message("user", prompt)),
                 List.of(new Tool("web_search_20250305", "web_search")));
