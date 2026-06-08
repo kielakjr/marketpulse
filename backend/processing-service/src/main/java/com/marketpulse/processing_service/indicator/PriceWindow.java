@@ -22,6 +22,7 @@ public class PriceWindow {
 
     private static final int CAPACITY = 50;
     private static final int RSI_PERIOD = 14;
+    private static final int ZSCORE_MIN_SAMPLES = 20;
 
     private final Deque<BigDecimal> prices;
 
@@ -90,7 +91,7 @@ public class PriceWindow {
     }
 
     public OptionalDouble calculateZScore() {
-        if (prices.size() < 2) {
+        if (prices.size() < ZSCORE_MIN_SAMPLES) {
             return OptionalDouble.empty();
         }
         double[] values = prices.stream().mapToDouble(BigDecimal::doubleValue).toArray();

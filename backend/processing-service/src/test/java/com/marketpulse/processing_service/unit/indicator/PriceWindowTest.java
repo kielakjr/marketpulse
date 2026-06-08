@@ -98,25 +98,25 @@ class PriceWindowTest {
     class ZScore {
 
         @Test
-        void emptyWhenFewerThanTwoPrices() {
-            window.add(BigDecimal.valueOf(5));
+        void emptyWhileTheWindowIsStillWarmingUp() {
+            addRange(1, 19); // fewer than the 20 samples required for a stable z-score
             assertThat(window.calculateZScore()).isEmpty();
         }
 
         @Test
         void emptyWhenAllPricesEqual() {
-            window.add(BigDecimal.valueOf(5));
-            window.add(BigDecimal.valueOf(5));
-            window.add(BigDecimal.valueOf(5));
+            for (int i = 0; i < 20; i++) {
+                window.add(BigDecimal.valueOf(5));
+            }
             assertThat(window.calculateZScore()).isEmpty();
         }
 
         @Test
         void measuresLatestPriceAgainstPopulationDistribution() {
-            addRange(1, 5); // mean 3, population std sqrt(2), last price 5
+            addRange(1, 20); // mean 10.5, population variance (20^2-1)/12 = 33.25, last price 20
             OptionalDouble z = window.calculateZScore();
             assertThat(z).isPresent();
-            assertThat(z.getAsDouble()).isCloseTo(Math.sqrt(2), within(1e-9));
+            assertThat(z.getAsDouble()).isCloseTo(9.5 / Math.sqrt(33.25), within(1e-9));
         }
     }
 
