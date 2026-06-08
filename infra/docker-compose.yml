@@ -32,3 +32,16 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    environment:
+      MONGO_INITDB_DATABASE: marketpulse
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+volumes:
+  mongodb_data:
