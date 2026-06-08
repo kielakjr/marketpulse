@@ -20,6 +20,7 @@
 		<module>ingestion-service</module>
 		<module>processing-service</module>
 		<module>websocket-gateway</module>
+		<module>explanation-service</module>
     </modules>
 
 	<properties>
