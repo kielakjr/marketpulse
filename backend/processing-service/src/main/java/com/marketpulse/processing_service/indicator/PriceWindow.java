@@ -12,7 +12,6 @@ import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalDouble;
 
 /**
  * Rolling window of the most recent prices for a single symbol.
@@ -90,9 +89,9 @@ public class PriceWindow {
         return Optional.of(100.0 - (100.0 / (1.0 + rs)));
     }
 
-    public OptionalDouble calculateZScore() {
+    public Optional<Double> calculateZScore() {
         if (prices.size() < ZSCORE_MIN_SAMPLES) {
-            return OptionalDouble.empty();
+            return Optional.empty();
         }
         double[] values = prices.stream().mapToDouble(BigDecimal::doubleValue).toArray();
         double mean = 0.0;
@@ -108,10 +107,10 @@ public class PriceWindow {
         variance /= values.length; // population variance
         double stdDev = Math.sqrt(variance);
         if (stdDev == 0.0) {
-            return OptionalDouble.empty();
+            return Optional.empty();
         }
         double latest = values[values.length - 1];
-        return OptionalDouble.of((latest - mean) / stdDev);
+        return Optional.of((latest - mean) / stdDev);
     }
 
     private List<BigDecimal> lastN(int n) {

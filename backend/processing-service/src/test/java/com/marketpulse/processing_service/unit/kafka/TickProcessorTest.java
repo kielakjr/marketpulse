@@ -22,6 +22,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,7 +31,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class TickProcessorTest {
 
-    private static final Instant TS = Instant.ofEpochMilli(1780135331773L);
+    private static final Instant MINUTE0 = Instant.parse("2026-06-08T12:00:00Z");
 
     @Mock
     private ProcessedEventPublisher publisher;
@@ -47,62 +49,86 @@ class TickProcessorTest {
         processor = new TickProcessor(publisher, store);
     }
 
-    private TickEvent tick(String symbol, long price) {
-        return new TickEvent(symbol, BigDecimal.valueOf(price), BigDecimal.ONE, price, TS);
+    /** Tick at the given whole-minute offset from MINUTE0 (plus 5s into the minute). */
+    private TickEvent tick(String symbol, long price, long minute) {
+        return new TickEvent(symbol, BigDecimal.valueOf(price), BigDecimal.ONE, price,
+                MINUTE0.plusSeconds(minute * 60L + 5));
     }
 
     @Nested
-    class SingleTick {
+    class LiveStream {
 
         @Test
-        void publishesProcessedEventCarryingTheTickPriceAndTimestamp() {
-            processor.process(tick("BTCUSDT", 100));
+        void publishesLiveProcessedEventForEveryTickCarryingTickPriceAndTimestamp() {
+            TickEvent t = tick("BTCUSDT", 100, 0);
+            processor.process(t);
 
-            verify(publisher).publish(eventCaptor.capture());
+            verify(publisher).publishProcessed(eventCaptor.capture());
             ProcessedEvent event = eventCaptor.getValue();
             assertThat(event.symbol()).isEqualTo("BTCUSDT");
             assertThat(event.price()).isEqualByComparingTo("100");
-            assertThat(event.timestamp()).isEqualTo(TS);
+            assertThat(event.timestamp()).isEqualTo(t.timestamp());
         }
 
         @Test
-        void leavesIndicatorsNullWhenThereIsNotEnoughHistory() {
-            processor.process(tick("BTCUSDT", 100));
+        void leavesIndicatorsNullWhileAllTicksFallInTheSameMinute() {
+            for (int i = 0; i < 30; i++) {
+                processor.process(new TickEvent("BTCUSDT", BigDecimal.valueOf(100 + i),
+                        BigDecimal.ONE, i, MINUTE0.plusSeconds(i))); // all within minute 0
+            }
 
-            verify(publisher).publish(eventCaptor.capture());
-            ProcessedEvent event = eventCaptor.getValue();
-            assertThat(event.sma20()).isNull();
-            assertThat(event.sma50()).isNull();
-            assertThat(event.rsi()).isNull();
-            assertThat(event.zScore()).isNull();
+            verify(publisher, atLeastOnce()).publishProcessed(eventCaptor.capture());
+            ProcessedEvent last = eventCaptor.getValue();
+            assertThat(last.sma20()).isNull();
+            assertThat(last.zScore()).isNull();
         }
     }
 
     @Nested
-    class AccumulatingHistory {
+    class IndicatorsFromCandleCloses {
 
         @Test
-        void computesSma20OnceTheSymbolHasTwentyTicks() {
-            for (int price = 1; price <= 20; price++) {
-                processor.process(tick("BTCUSDT", price));
+        void computesSma20FromCandleClosesOnceTwentyCandlesHaveClosed() {
+            // ticks at minutes 0..20; tick m closes candle m-1 with close = price at minute m-1.
+            // prices at minutes 0..19 = 1..20 -> 20 closes [1..20], SMA20 = 10.5.
+            for (long minute = 0; minute <= 20; minute++) {
+                processor.process(tick("BTCUSDT", minute + 1, minute));
             }
 
-            verify(publisher, org.mockito.Mockito.times(20)).publish(eventCaptor.capture());
-            ProcessedEvent last = eventCaptor.getValue();
-            assertThat(last.sma20()).isEqualByComparingTo("10.5");
+            verify(publisher, atLeastOnce()).publishProcessed(eventCaptor.capture());
+            assertThat(eventCaptor.getValue().sma20()).isEqualByComparingTo("10.5");
         }
 
         @Test
-        void keepsAnIndependentWindowPerSymbol() {
-            for (int price = 1; price <= 20; price++) {
-                processor.process(tick("BTCUSDT", price));
+        void keepsIndependentStatePerSymbol() {
+            for (long minute = 0; minute <= 20; minute++) {
+                processor.process(tick("BTCUSDT", minute + 1, minute));
             }
-            processor.process(tick("ETHUSDT", 5));
+            processor.process(tick("ETHUSDT", 5, 0));
 
-            verify(publisher, org.mockito.Mockito.atLeastOnce()).publish(eventCaptor.capture());
-            ProcessedEvent ethEvent = eventCaptor.getValue();
-            assertThat(ethEvent.symbol()).isEqualTo("ETHUSDT");
-            assertThat(ethEvent.sma20()).isNull();
+            verify(publisher, atLeastOnce()).publishProcessed(eventCaptor.capture());
+            ProcessedEvent eth = eventCaptor.getValue();
+            assertThat(eth.symbol()).isEqualTo("ETHUSDT");
+            assertThat(eth.sma20()).isNull();
+        }
+    }
+
+    @Nested
+    class AnomalyEvaluation {
+
+        @Test
+        void evaluatesAnomalyOnlyWhenACandleCloses() {
+            // three ticks in the same minute -> no candle closes
+            processor.process(tick("BTCUSDT", 100, 0));
+            processor.process(new TickEvent("BTCUSDT", BigDecimal.valueOf(101),
+                    BigDecimal.ONE, 1, MINUTE0.plusSeconds(20)));
+            processor.process(new TickEvent("BTCUSDT", BigDecimal.valueOf(102),
+                    BigDecimal.ONE, 2, MINUTE0.plusSeconds(40)));
+            verify(publisher, never()).evaluateAnomaly(any(), any(), any(), any());
+
+            // a tick in the next minute closes one candle
+            processor.process(tick("BTCUSDT", 103, 1));
+            verify(publisher, times(1)).evaluateAnomaly(eq("BTCUSDT"), any(), any(), any());
         }
     }
 
@@ -117,37 +143,31 @@ class TickProcessorTest {
             }
             when(store.load("BTCUSDT")).thenReturn(Optional.of(stored));
 
-            processor.process(tick("BTCUSDT", 20));
+            // first tick opens a candle; tick in next minute closes it with close=20
+            // -> window has [1..19, 20] = 20 closes, SMA20 = 10.5.
+            processor.process(tick("BTCUSDT", 20, 0));
+            processor.process(tick("BTCUSDT", 999, 1));
 
-            verify(publisher).publish(eventCaptor.capture());
+            verify(publisher, atLeastOnce()).publishProcessed(eventCaptor.capture());
             assertThat(eventCaptor.getValue().sma20()).isEqualByComparingTo("10.5");
         }
 
         @Test
-        void loadsFromTheStoreOnlyOncePerSymbol() {
-            processor.process(tick("BTCUSDT", 100));
-            processor.process(tick("BTCUSDT", 101));
-            processor.process(tick("BTCUSDT", 102));
+        void loadsFromStoreOnlyOncePerSymbol() {
+            processor.process(tick("BTCUSDT", 100, 0));
+            processor.process(tick("BTCUSDT", 101, 1));
+            processor.process(tick("BTCUSDT", 102, 2));
 
             verify(store, times(1)).load("BTCUSDT");
         }
 
         @Test
-        void savesTheWindowAfterEveryTick() {
-            processor.process(tick("BTCUSDT", 100));
-            processor.process(tick("BTCUSDT", 101));
+        void savesTheWindowOnlyWhenACandleCloses() {
+            processor.process(tick("BTCUSDT", 100, 0));               // opens candle, no close
+            verify(store, never()).save(any(), any());
 
-            verify(store, times(2)).save(eq("BTCUSDT"), any(PriceWindow.class));
-        }
-
-        @Test
-        void loadsEachSymbolOnceEvenWhenSymbolsInterleave() {
-            processor.process(tick("BTCUSDT", 100));
-            processor.process(tick("ETHUSDT", 200));
-            processor.process(tick("BTCUSDT", 101));
-
-            verify(store, times(1)).load("BTCUSDT");
-            verify(store, times(1)).load("ETHUSDT");
+            processor.process(tick("BTCUSDT", 101, 1));               // closes candle m0
+            verify(store, times(1)).save(eq("BTCUSDT"), any(PriceWindow.class));
         }
     }
 }

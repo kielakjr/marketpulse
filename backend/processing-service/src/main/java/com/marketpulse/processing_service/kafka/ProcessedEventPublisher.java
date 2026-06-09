@@ -8,6 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -23,10 +26,11 @@ public class ProcessedEventPublisher {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    public void publish(ProcessedEvent event) {
+    public void publishProcessed(ProcessedEvent event) {
         send(PROCESSED_TOPIC, event.symbol(), event);
+    }
 
-        Double zScore = event.zScore();
+    public void evaluateAnomaly(String symbol, BigDecimal close, Double zScore, Instant timestamp) {
         if (zScore == null) {
             return;
         }
@@ -36,15 +40,13 @@ public class ProcessedEventPublisher {
         }
 
         var severity = severityFor(absZScore);
-        var alert = new AnomalyAlert(
-                event.symbol(), event.price(), zScore, severity, event.timestamp());
+        var alert = new AnomalyAlert(symbol, close, zScore, severity, timestamp);
 
-        log.warn("Anomaly detected for {}: z-score={} severity={}",
-                event.symbol(), zScore, severity);
-        send(ALERTS_TOPIC, alert.symbol(), alert);
+        log.warn("Anomaly detected for {}: z-score={} severity={}", symbol, zScore, severity);
+        send(ALERTS_TOPIC, symbol, alert);
 
         if (absZScore > CRITICAL_THRESHOLD) {
-            send(MAJOR_ANOMALIES_TOPIC, alert.symbol(), alert);
+            send(MAJOR_ANOMALIES_TOPIC, symbol, alert);
         }
     }
 

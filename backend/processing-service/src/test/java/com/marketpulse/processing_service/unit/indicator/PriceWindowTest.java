@@ -7,7 +7,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.util.Optional;
-import java.util.OptionalDouble;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
@@ -114,9 +113,9 @@ class PriceWindowTest {
         @Test
         void measuresLatestPriceAgainstPopulationDistribution() {
             addRange(1, 20); // mean 10.5, population variance (20^2-1)/12 = 33.25, last price 20
-            OptionalDouble z = window.calculateZScore();
+            Optional<Double> z = window.calculateZScore();
             assertThat(z).isPresent();
-            assertThat(z.getAsDouble()).isCloseTo(9.5 / Math.sqrt(33.25), within(1e-9));
+            assertThat(z.get()).isCloseTo(9.5 / Math.sqrt(33.25), within(1e-9));
         }
     }
 
