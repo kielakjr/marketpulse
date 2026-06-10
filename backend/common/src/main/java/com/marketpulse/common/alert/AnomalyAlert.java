@@ -8,5 +8,8 @@ public record AnomalyAlert(
         BigDecimal price,
         Double zScore,
         AlertSeverity severity,
+        BigDecimal sma20,
+        BigDecimal sma50,
+        Double rsi,
         Instant timestamp
 ) {}

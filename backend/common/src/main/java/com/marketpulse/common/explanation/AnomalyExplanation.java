@@ -13,5 +13,8 @@ public record AnomalyExplanation(
         AlertSeverity severity,
         String explanation,
         List<AnomalySource> sources,
+        Integer confidence,
+        String confidenceReason,
+        SourcesQuality sourcesQuality,
         Instant timestamp
 ) {}
