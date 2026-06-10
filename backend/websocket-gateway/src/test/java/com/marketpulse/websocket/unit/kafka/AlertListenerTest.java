@@ -31,7 +31,7 @@ class AlertListenerTest {
     }
 
     private AnomalyAlert alert(String symbol) {
-        return new AnomalyAlert(symbol, new BigDecimal("73610.36"), 4.5, AlertSeverity.HIGH, TS);
+        return new AnomalyAlert(symbol, new BigDecimal("73610.36"), 4.5, AlertSeverity.HIGH, null, null, null, TS);
     }
 
     @Test

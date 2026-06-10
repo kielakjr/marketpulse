@@ -3,6 +3,7 @@ package com.marketpulse.websocket.unit.kafka;
 import com.marketpulse.common.alert.AlertSeverity;
 import com.marketpulse.common.explanation.AnomalyExplanation;
 import com.marketpulse.common.explanation.AnomalySource;
+import com.marketpulse.common.explanation.SourcesQuality;
 import com.marketpulse.websocket.kafka.ExplanationListener;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,13 +35,9 @@ class ExplanationListenerTest {
 
     private AnomalyExplanation explanation(String symbol) {
         return new AnomalyExplanation(
-                symbol,
-                new BigDecimal("73610.36"),
-                4.5,
-                AlertSeverity.HIGH,
-                "Price spiked on heavy volume.",
-                List.of(new AnomalySource("Example", "https://example.com", "snippet")),
-                TS);
+                symbol, new BigDecimal("73610.36"), 6.2, AlertSeverity.CRITICAL,
+                "Wyjaśnienie.", List.of(new AnomalySource("t", "https://e.com", "s")),
+                7, "wysoka jakość źródeł", SourcesQuality.HIGH, TS);
     }
 
     @Test
