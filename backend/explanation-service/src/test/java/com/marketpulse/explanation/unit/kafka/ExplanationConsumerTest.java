@@ -4,12 +4,17 @@ import com.marketpulse.common.alert.AlertSeverity;
 import com.marketpulse.common.alert.AnomalyAlert;
 import com.marketpulse.common.explanation.AnomalyExplanation;
 import com.marketpulse.common.explanation.AnomalySource;
+import com.marketpulse.common.explanation.SourcesQuality;
 import com.marketpulse.explanation.cooldown.CooldownService;
 import com.marketpulse.explanation.kafka.ExplanationConsumer;
+import com.marketpulse.explanation.llm.ExplanationMapper;
 import com.marketpulse.explanation.llm.LlmClient;
-import com.marketpulse.explanation.llm.LlmResponse;
+import com.marketpulse.explanation.llm.PromptBuilder;
+import com.marketpulse.explanation.llm.StructuredResponse;
+import com.marketpulse.explanation.llm.StructuredResponseParser;
 import com.marketpulse.explanation.persistence.AnomalyRecord;
 import com.marketpulse.explanation.persistence.AnomalyRecordRepository;
+import com.marketpulse.explanation.search.SearchClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -46,7 +51,19 @@ class ExplanationConsumerTest {
     private CooldownService cooldownService;
 
     @Mock
+    private SearchClient searchClient;
+
+    @Mock
+    private PromptBuilder promptBuilder;
+
+    @Mock
     private LlmClient llmClient;
+
+    @Mock
+    private StructuredResponseParser parser;
+
+    @Mock
+    private ExplanationMapper mapper;
 
     @Mock
     private AnomalyRecordRepository repository;
@@ -64,22 +81,29 @@ class ExplanationConsumerTest {
 
     @BeforeEach
     void setUp() {
-        consumer = new ExplanationConsumer(cooldownService, llmClient, repository, kafkaTemplate);
+        consumer = new ExplanationConsumer(
+                cooldownService, searchClient, promptBuilder, llmClient,
+                parser, mapper, repository, kafkaTemplate);
     }
 
     private AnomalyAlert alert() {
-        return new AnomalyAlert("BTCUSDT", new BigDecimal("73610.36"), 6.2, AlertSeverity.CRITICAL, TS);
+        return new AnomalyAlert("BTCUSDT", new BigDecimal("73610.36"), 6.2, AlertSeverity.CRITICAL, null, null, null, TS);
     }
 
-    private LlmResponse llmResponse() {
-        return new LlmResponse(
-                "Nagły spadek spowodowany wyprzedażą.",
-                List.of(new AnomalySource("Artykuł A", "https://example.com/a", "fragment")));
+    private AnomalyExplanation explanation() {
+        return new AnomalyExplanation("BTCUSDT", new BigDecimal("73610.36"), 6.2,
+                AlertSeverity.CRITICAL, "Nagły spadek.",
+                List.of(new AnomalySource("Artykuł A", "https://example.com/a", "fragment")),
+                8, "spójne źródła", SourcesQuality.MEDIUM, TS);
     }
 
     private void stubHappyPath() {
         when(cooldownService.tryAcquire("BTCUSDT")).thenReturn(true);
-        when(llmClient.explain(any())).thenReturn(llmResponse());
+        when(searchClient.search(any())).thenReturn(List.of());
+        when(promptBuilder.build(any(), any())).thenReturn("prompt");
+        when(llmClient.complete("prompt")).thenReturn("{}");
+        when(parser.parse("{}")).thenReturn(new StructuredResponse("Nagły spadek.", 8, "spójne źródła", List.of()));
+        when(mapper.toExplanation(any(), any(), any())).thenReturn(explanation());
         when(repository.save(any())).thenAnswer(invocation -> {
             AnomalyRecord record = invocation.getArgument(0);
             record.setId("rec-1");
@@ -96,7 +120,7 @@ class ExplanationConsumerTest {
 
             consumer.onAnomaly(alert());
 
-            verifyNoInteractions(llmClient, repository, kafkaTemplate);
+            verifyNoInteractions(searchClient, llmClient, repository, kafkaTemplate);
             verify(cooldownService, never()).clear(any());
         }
     }
@@ -110,9 +134,9 @@ class ExplanationConsumerTest {
         }
 
         @Test
-        void callsTheLlmWithTheAlert() {
+        void callsTheLlmWithThePrompt() {
             consumer.onAnomaly(alert());
-            verify(llmClient).explain(alert());
+            verify(llmClient).complete("prompt");
         }
 
         @Test
@@ -125,9 +149,11 @@ class ExplanationConsumerTest {
             assertThat(record.getPrice()).isEqualByComparingTo("73610.36");
             assertThat(record.getZScore()).isEqualTo(6.2);
             assertThat(record.getSeverity()).isEqualTo("CRITICAL");
-            assertThat(record.getExplanation()).isEqualTo("Nagły spadek spowodowany wyprzedażą.");
+            assertThat(record.getExplanation()).isEqualTo("Nagły spadek.");
             assertThat(record.getSources()).hasSize(1);
             assertThat(record.getTimestamp()).isEqualTo(TS);
+            assertThat(record.getConfidence()).isEqualTo(8);
+            assertThat(record.getSourcesQuality()).isEqualTo(SourcesQuality.MEDIUM);
         }
 
         @Test
@@ -138,19 +164,23 @@ class ExplanationConsumerTest {
             assertThat(valueCaptor.getValue()).isInstanceOf(AnomalyExplanation.class);
             var explanation = (AnomalyExplanation) valueCaptor.getValue();
             assertThat(explanation.symbol()).isEqualTo("BTCUSDT");
-            assertThat(explanation.explanation()).isEqualTo("Nagły spadek spowodowany wyprzedażą.");
+            assertThat(explanation.explanation()).isEqualTo("Nagły spadek.");
             assertThat(explanation.severity()).isEqualTo(AlertSeverity.CRITICAL);
             assertThat(explanation.sources()).hasSize(1);
             assertThat(explanation.timestamp()).isEqualTo(TS);
+            assertThat(explanation.confidence()).isEqualTo(8);
+            assertThat(explanation.sourcesQuality()).isEqualTo(SourcesQuality.MEDIUM);
         }
 
         @Test
-        void claimsTheCooldownBeforeCallingTheLlm() {
+        void runsTheCooldownSearchAndPromptBeforeCallingTheLlm() {
             consumer.onAnomaly(alert());
 
-            InOrder inOrder = inOrder(cooldownService, llmClient);
+            InOrder inOrder = inOrder(cooldownService, searchClient, promptBuilder, llmClient);
             inOrder.verify(cooldownService).tryAcquire("BTCUSDT");
-            inOrder.verify(llmClient).explain(any());
+            inOrder.verify(searchClient).search(any());
+            inOrder.verify(promptBuilder).build(any(), any());
+            inOrder.verify(llmClient).complete(any());
         }
 
         @Test
@@ -167,7 +197,9 @@ class ExplanationConsumerTest {
         @Test
         void swallowsTheExceptionDoesNotPersistOrPublishAndReleasesTheCooldown() {
             when(cooldownService.tryAcquire("BTCUSDT")).thenReturn(true);
-            when(llmClient.explain(any())).thenThrow(new RuntimeException("LLM unavailable"));
+            when(searchClient.search(any())).thenReturn(List.of());
+            when(promptBuilder.build(any(), any())).thenReturn("prompt");
+            when(llmClient.complete(any())).thenThrow(new RuntimeException("LLM unavailable"));
 
             assertThatCode(() -> consumer.onAnomaly(alert())).doesNotThrowAnyException();
 

@@ -7,6 +7,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.time.LocalDate;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 /**
@@ -30,11 +33,13 @@ public class SearxngSearchClient implements SearchClient {
     @Override
     public List<SearchResult> search(AnomalyAlert alert) {
         String direction = alert.zScore() < 0 ? "drop" : "surge";
-        String query = "%s crypto price %s news".formatted(alert.symbol(), direction);
+        String query = "%s price %s site:coindesk.com OR site:cointelegraph.com %s".formatted(alert.symbol(), direction, LocalDate.now());
         try {
             SearxResponse response = restClient.get()
                     .uri(uri -> uri.path("/search")
                             .queryParam("q", query)
+                            .queryParam("time_range", "day")
+                            .queryParam("categories", "news")
                             .queryParam("format", "json")
                             .build())
                     .retrieve()
@@ -44,6 +49,7 @@ public class SearxngSearchClient implements SearchClient {
                 return List.of();
             }
             return response.results().stream()
+                    .filter(r -> isRecent(r.publishedDate()))
                     .limit(MAX_RESULTS)
                     .map(r -> new SearchResult(r.title(), r.url(), r.content()))
                     .toList();
@@ -58,5 +64,18 @@ public class SearxngSearchClient implements SearchClient {
     private record SearxResponse(List<SearxResult> results) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record SearxResult(String title, String url, String content) {}
+    private record SearxResult(String title, String url, String content, String publishedDate) {}
+
+    private boolean isRecent(String publishedDate) {
+        if (publishedDate == null || publishedDate.isBlank()) {
+            return true;
+        }
+        try {
+            var published = ZonedDateTime.parse(publishedDate);
+            return published.isAfter(ZonedDateTime.now().minusHours(24));
+        } catch (DateTimeParseException e) {
+            log.warn("Could not parse publishedDate: {}", publishedDate);
+            return true;
+        }
+    }
 }

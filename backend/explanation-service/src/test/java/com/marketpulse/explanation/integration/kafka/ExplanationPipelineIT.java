@@ -2,12 +2,13 @@ package com.marketpulse.explanation.integration.kafka;
 
 import com.marketpulse.common.alert.AlertSeverity;
 import com.marketpulse.common.alert.AnomalyAlert;
-import com.marketpulse.common.explanation.AnomalySource;
+import com.marketpulse.common.explanation.SourcesQuality;
 import com.marketpulse.explanation.integration.TestcontainersConfiguration;
 import com.marketpulse.explanation.llm.LlmClient;
-import com.marketpulse.explanation.llm.LlmResponse;
 import com.marketpulse.explanation.persistence.AnomalyRecord;
 import com.marketpulse.explanation.persistence.AnomalyRecordRepository;
+import com.marketpulse.explanation.search.SearchClient;
+import com.marketpulse.explanation.search.SearchResult;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -43,6 +44,9 @@ class ExplanationPipelineIT {
     @MockitoBean
     LlmClient llmClient;
 
+    @MockitoBean
+    SearchClient searchClient;
+
     @Autowired
     KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -59,9 +63,12 @@ class ExplanationPipelineIT {
 
     @BeforeEach
     void setUp() {
-        when(llmClient.explain(any())).thenReturn(new LlmResponse(
-                EXPLANATION_TEXT,
-                List.of(new AnomalySource("Artykuł", "https://example.com/a", "fragment"))));
+        when(searchClient.search(any())).thenReturn(
+                List.of(new SearchResult("Artykuł", "https://example.com/a", "fragment")));
+        when(llmClient.complete(any())).thenReturn("""
+                {"explanation":"Nagły spadek spowodowany falą wyprzedaży.","confidence":8,
+                 "confidence_reason":"spójne źródła","used_sources":[1]}
+                """);
 
         repository.deleteAll();
         redisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
@@ -81,19 +88,22 @@ class ExplanationPipelineIT {
     @Test
     void aMajorAnomalyIsExplainedPublishedAndPersisted() {
         var alert = new AnomalyAlert(
-                "BTCUSDT", new BigDecimal("73610.36"), 6.2, AlertSeverity.CRITICAL, TS);
+                "BTCUSDT", new BigDecimal("73610.36"), 6.2, AlertSeverity.CRITICAL, null, null, null, TS);
 
         kafkaTemplate.send("market.anomalies.major", alert.symbol(), alert);
 
         ConsumerRecord<String, String> published =
                 KafkaTestUtils.getSingleRecord(consumer, "market.explanations", Duration.ofSeconds(20));
         assertThat(published.key()).isEqualTo("BTCUSDT");
-        assertThat(published.value()).contains("BTCUSDT").contains(EXPLANATION_TEXT);
+        assertThat(published.value()).contains("BTCUSDT").contains(EXPLANATION_TEXT)
+                .contains("MEDIUM");   // sourcesQuality serialized (1 used source -> MEDIUM)
 
         // The consumer persists before publishing, so the record is already stored.
         List<AnomalyRecord> stored = repository.findTop20BySymbolOrderByTimestampDesc("BTCUSDT");
         assertThat(stored).hasSize(1);
         assertThat(stored.getFirst().getExplanation()).isEqualTo(EXPLANATION_TEXT);
         assertThat(stored.getFirst().getSeverity()).isEqualTo("CRITICAL");
+        assertThat(stored.getFirst().getConfidence()).isEqualTo(8);
+        assertThat(stored.getFirst().getSourcesQuality()).isEqualTo(SourcesQuality.MEDIUM);
     }
 }
