@@ -3,20 +3,28 @@ package com.marketpulse.explanation.kafka;
 import com.marketpulse.common.alert.AnomalyAlert;
 import com.marketpulse.common.explanation.AnomalyExplanation;
 import com.marketpulse.explanation.cooldown.CooldownService;
+import com.marketpulse.explanation.llm.ExplanationMapper;
 import com.marketpulse.explanation.llm.LlmClient;
-import com.marketpulse.explanation.llm.LlmResponse;
+import com.marketpulse.explanation.llm.PromptBuilder;
+import com.marketpulse.explanation.llm.StructuredResponse;
+import com.marketpulse.explanation.llm.StructuredResponseParser;
 import com.marketpulse.explanation.persistence.AnomalyRecord;
 import com.marketpulse.explanation.persistence.AnomalyRecordRepository;
+import com.marketpulse.explanation.search.SearchClient;
+import com.marketpulse.explanation.search.SearchResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 /**
- * Consumes major anomalies, asks the LLM for an explanation (subject to a
- * per-symbol cooldown), persists the result and re-publishes it for clients.
- * The whole flow is guarded so a single failure never stops the consumer.
+ * Consumes major anomalies, retrieves context (SearxNG), asks the LLM for a
+ * structured explanation (subject to a per-symbol cooldown), persists the result
+ * and re-publishes it for clients. The whole flow is guarded so a single failure
+ * never stops the consumer.
  */
 @Component
 @Slf4j
@@ -26,7 +34,11 @@ public class ExplanationConsumer {
     private static final String EXPLANATIONS_TOPIC = "market.explanations";
 
     private final CooldownService cooldownService;
+    private final SearchClient searchClient;
+    private final PromptBuilder promptBuilder;
     private final LlmClient llmClient;
+    private final StructuredResponseParser parser;
+    private final ExplanationMapper mapper;
     private final AnomalyRecordRepository repository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -37,40 +49,36 @@ public class ExplanationConsumer {
         try {
             symbol = alert.symbol();
 
-            // Claim the cooldown up front so a burst for the same symbol triggers
-            // at most one (paid) LLM call, even under redelivery or concurrency.
             if (!cooldownService.tryAcquire(symbol)) {
                 log.info("[{}] On cooldown, skipping", symbol);
                 return;
             }
             acquired = true;
 
-            log.info("[{}] Calling LLM, zScore={}", symbol, alert.zScore());
-            LlmResponse response = llmClient.explain(alert);
+            List<SearchResult> results = searchClient.search(alert);
+            String prompt = promptBuilder.build(alert, results);
+
+            log.info("[{}] Calling LLM, zScore={}, sources={}", symbol, alert.zScore(), results.size());
+            StructuredResponse response = parser.parse(llmClient.complete(prompt));
+            AnomalyExplanation explanation = mapper.toExplanation(alert, response, results);
 
             var record = AnomalyRecord.builder()
                     .symbol(symbol)
                     .price(alert.price())
                     .zScore(alert.zScore() != null ? alert.zScore() : 0.0)
                     .severity(alert.severity() != null ? alert.severity().name() : null)
-                    .explanation(response.explanation())
-                    .sources(response.sources())
+                    .explanation(explanation.explanation())
+                    .sources(explanation.sources())
+                    .confidence(explanation.confidence())
+                    .confidenceReason(explanation.confidenceReason())
+                    .sourcesQuality(explanation.sourcesQuality())
                     .timestamp(alert.timestamp())
                     .build();
             var saved = repository.save(record);
             log.info("[{}] Saved anomaly record, id={}", symbol, saved.getId());
 
-            var explanation = new AnomalyExplanation(
-                    symbol,
-                    alert.price(),
-                    alert.zScore(),
-                    alert.severity(),
-                    response.explanation(),
-                    response.sources(),
-                    alert.timestamp());
             kafkaTemplate.send(EXPLANATIONS_TOPIC, symbol, explanation);
         } catch (Exception e) {
-            // Release the cooldown we claimed so a transient failure can be retried.
             if (acquired) {
                 cooldownService.clear(symbol);
             }

@@ -22,5 +22,8 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 
+searxng:
+  base-url: http://localhost:8888
+
 server:
   port: 8085

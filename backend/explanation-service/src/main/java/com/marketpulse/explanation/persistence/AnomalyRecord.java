@@ -1,6 +1,7 @@
 package com.marketpulse.explanation.persistence;
 
 import com.marketpulse.common.explanation.AnomalySource;
+import com.marketpulse.common.explanation.SourcesQuality;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -27,5 +28,8 @@ public class AnomalyRecord {
     private String severity;
     private String explanation;
     private List<AnomalySource> sources;
+    private Integer confidence;
+    private String confidenceReason;
+    private SourcesQuality sourcesQuality;
     private Instant timestamp;
 }

@@ -14,9 +14,10 @@ public class LlmConfig {
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(60);
 
     /**
-     * Shared builder for the LLM clients. The timeouts keep a slow or hung
-     * provider from blocking the Kafka consumer thread indefinitely; the read
-     * timeout is generous because Anthropic's web search can take a while.
+     * Shared builder for the LLM clients and the SearxNG search client. The
+     * timeouts keep a slow or hung provider from blocking the Kafka consumer
+     * thread indefinitely; the read timeout is generous because local model
+     * inference (Ollama) can take a while.
      */
     @Bean
     RestClient.Builder restClientBuilder() {
