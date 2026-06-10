@@ -49,7 +49,7 @@ public class TickProcessor {
                 symbol, tick.price(), sma20, sma50, rsi, zScore, tick.timestamp()));
 
         closed.ifPresent(candle ->
-                publisher.evaluateAnomaly(symbol, candle.close(), zScore, candle.openTime()));
+                publisher.evaluateAnomaly(symbol, candle.close(), zScore, sma20, sma50, rsi, candle.openTime()));
     }
 
 }

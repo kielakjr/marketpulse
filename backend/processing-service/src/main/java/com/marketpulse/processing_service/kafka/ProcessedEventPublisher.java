@@ -30,7 +30,8 @@ public class ProcessedEventPublisher {
         send(PROCESSED_TOPIC, event.symbol(), event);
     }
 
-    public void evaluateAnomaly(String symbol, BigDecimal close, Double zScore, Instant timestamp) {
+    public void evaluateAnomaly(String symbol, BigDecimal close, Double zScore,
+                                BigDecimal sma20, BigDecimal sma50, Double rsi, Instant timestamp) {
         if (zScore == null) {
             return;
         }
@@ -40,7 +41,7 @@ public class ProcessedEventPublisher {
         }
 
         var severity = severityFor(absZScore);
-        var alert = new AnomalyAlert(symbol, close, zScore, severity, timestamp);
+        var alert = new AnomalyAlert(symbol, close, zScore, severity, sma20, sma50, rsi, timestamp);
 
         log.warn("Anomaly detected for {}: z-score={} severity={}", symbol, zScore, severity);
         send(ALERTS_TOPIC, symbol, alert);

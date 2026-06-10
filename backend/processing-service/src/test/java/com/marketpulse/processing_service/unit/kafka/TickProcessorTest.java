@@ -124,11 +124,11 @@ class TickProcessorTest {
                     BigDecimal.ONE, 1, MINUTE0.plusSeconds(20)));
             processor.process(new TickEvent("BTCUSDT", BigDecimal.valueOf(102),
                     BigDecimal.ONE, 2, MINUTE0.plusSeconds(40)));
-            verify(publisher, never()).evaluateAnomaly(any(), any(), any(), any());
+            verify(publisher, never()).evaluateAnomaly(any(), any(), any(), any(), any(), any(), any());
 
             // a tick in the next minute closes one candle
             processor.process(tick("BTCUSDT", 103, 1));
-            verify(publisher, times(1)).evaluateAnomaly(eq("BTCUSDT"), any(), any(), any());
+            verify(publisher, times(1)).evaluateAnomaly(eq("BTCUSDT"), any(), any(), any(), any(), any(), any());
         }
     }
 
