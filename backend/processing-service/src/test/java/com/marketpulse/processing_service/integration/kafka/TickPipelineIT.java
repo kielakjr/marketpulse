@@ -2,6 +2,7 @@ package com.marketpulse.processing_service.integration.kafka;
 
 import com.marketpulse.common.event.TickEvent;
 import com.marketpulse.processing_service.integration.TestcontainersConfiguration;
+import com.marketpulse.processing_service.kafka.AnomalyThresholds;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -96,10 +97,10 @@ class TickPipelineIT {
         }
 
         @Test
-        void aSingleHighAlertIsEmittedForTheAnomalousMinute() {
+        void aSingleCriticalAlertIsEmittedForTheAnomalousMinute() {
             // Minutes 0..19 hover at 100/101 (small variance); minute 20 spikes to 200.
             // The tick at minute 21 closes the minute-20 candle (close=200); with the
-            // window now [~100/101 x20, 200] the z-score is ~4.47 -> HIGH alert.
+            // window now [~100/101 x20, 200] the z-score is ~4.47, which exceeds AnomalyThresholds.CRITICAL.
             for (int minute = 0; minute <= 21; minute++) {
                 long price = (minute == 20) ? 200 : 100 + (minute % 2);
                 kafkaTemplate.send("market.ticks", SYMBOL, tick(price, minute));
@@ -109,7 +110,7 @@ class TickPipelineIT {
                     KafkaTestUtils.getSingleRecord(consumer, "market.alerts", Duration.ofSeconds(20));
 
             assertThat(alert.key()).isEqualTo(SYMBOL);
-            assertThat(alert.value()).contains(SYMBOL).contains("HIGH");
+            assertThat(alert.value()).contains(SYMBOL).contains("CRITICAL");
         }
     }
 }

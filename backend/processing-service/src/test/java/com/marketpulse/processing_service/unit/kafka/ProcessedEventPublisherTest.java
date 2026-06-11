@@ -3,6 +3,7 @@ package com.marketpulse.processing_service.unit.kafka;
 import com.marketpulse.common.alert.AlertSeverity;
 import com.marketpulse.common.alert.AnomalyAlert;
 import com.marketpulse.common.event.ProcessedEvent;
+import com.marketpulse.processing_service.kafka.AnomalyThresholds;
 import com.marketpulse.processing_service.kafka.ProcessedEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -81,69 +82,74 @@ class ProcessedEventPublisherTest {
     class EvaluateAnomaly {
 
         @Test
+        void noAlertWhenZScoreWithinThreshold() {
+            publisher.evaluateAnomaly("BTCUSDT", CLOSE, AnomalyThresholds.ALERT - 0.5, null, null, null, TS);
+            verify(kafkaTemplate, never()).send(eq(ALERTS_TOPIC), anyString(), any());
+            verify(kafkaTemplate, never()).send(eq(MAJOR_TOPIC), anyString(), any());
+        }
+
+        @Test
         void noAlertWhenZScoreIsNull() {
             publisher.evaluateAnomaly("BTCUSDT", CLOSE, null, null, null, null, TS);
             verify(kafkaTemplate, never()).send(eq(ALERTS_TOPIC), anyString(), any());
         }
 
         @Test
-        void noAlertWhenZScoreWithinThreshold() {
-            publisher.evaluateAnomaly("BTCUSDT", CLOSE, 2.0, null, null, null, TS);
-            verify(kafkaTemplate, never()).send(eq(ALERTS_TOPIC), anyString(), any());
-            verify(kafkaTemplate, never()).send(eq(MAJOR_TOPIC), anyString(), any());
-        }
-
-        @Test
-        void noAlertExactlyAtTwoBecauseThresholdIsStrict() {
-            publisher.evaluateAnomaly("BTCUSDT", CLOSE, 2.0, null, null, null, TS);
+        void noAlertExactlyAtAlertThresholdBecauseThresholdIsStrict() {
+            publisher.evaluateAnomaly("BTCUSDT", CLOSE, AnomalyThresholds.ALERT, null, null, null, TS);
             verify(kafkaTemplate, never()).send(eq(ALERTS_TOPIC), anyString(), any());
         }
 
         @Test
-        void mediumAlertWhenZScoreAboveTwo() {
-            publisher.evaluateAnomaly("BTCUSDT", CLOSE, 2.5, null, null, null, TS);
+        void mediumAlertWhenZScoreAboveAlertThreshold() {
+            double z = AnomalyThresholds.ALERT + 0.5;
+            publisher.evaluateAnomaly("BTCUSDT", CLOSE, z, null, null, null, TS);
             verify(kafkaTemplate).send(eq(ALERTS_TOPIC), eq("BTCUSDT"),
-                    eq(expectedAlert(AlertSeverity.MEDIUM, 2.5)));
+                    eq(expectedAlert(AlertSeverity.MEDIUM, z)));
             verify(kafkaTemplate, never()).send(eq(MAJOR_TOPIC), anyString(), any());
         }
 
         @Test
-        void highAlertWhenZScoreAboveThree() {
-            publisher.evaluateAnomaly("BTCUSDT", CLOSE, 3.2, null, null, null, TS);
+        void highAlertWhenZScoreAboveHighThreshold() {
+            double z = AnomalyThresholds.HIGH + 0.2;
+            publisher.evaluateAnomaly("BTCUSDT", CLOSE, z, null, null, null, TS);
             verify(kafkaTemplate).send(eq(ALERTS_TOPIC), eq("BTCUSDT"),
-                    eq(expectedAlert(AlertSeverity.HIGH, 3.2)));
+                    eq(expectedAlert(AlertSeverity.HIGH, z)));
             verify(kafkaTemplate, never()).send(eq(MAJOR_TOPIC), anyString(), any());
         }
 
         @Test
-        void highAlertExactlyAtThreePointFiveBecauseCriticalIsStrict() {
-            publisher.evaluateAnomaly("BTCUSDT", CLOSE, 3.5, null, null, null, TS);
+        void highAlertExactlyAtCriticalThresholdBecauseCriticalIsStrict() {
+            double z = AnomalyThresholds.CRITICAL;
+            publisher.evaluateAnomaly("BTCUSDT", CLOSE, z, null, null, null, TS);
             verify(kafkaTemplate).send(eq(ALERTS_TOPIC), eq("BTCUSDT"),
-                    eq(expectedAlert(AlertSeverity.HIGH, 3.5)));
+                    eq(expectedAlert(AlertSeverity.HIGH, z)));
             verify(kafkaTemplate, never()).send(eq(MAJOR_TOPIC), anyString(), any());
         }
 
         @Test
-        void criticalAlertAndMajorTopicWhenZScoreAboveFive() {
-            publisher.evaluateAnomaly("BTCUSDT", CLOSE, 6.0, null, null, null, TS);
+        void criticalAlertAndMajorTopicWhenZScoreAboveCriticalThreshold() {
+            double z = AnomalyThresholds.CRITICAL + 2.5;
+            publisher.evaluateAnomaly("BTCUSDT", CLOSE, z, null, null, null, TS);
             verify(kafkaTemplate).send(eq(ALERTS_TOPIC), eq("BTCUSDT"),
-                    eq(expectedAlert(AlertSeverity.CRITICAL, 6.0)));
+                    eq(expectedAlert(AlertSeverity.CRITICAL, z)));
             verify(kafkaTemplate).send(eq(MAJOR_TOPIC), eq("BTCUSDT"),
-                    eq(expectedAlert(AlertSeverity.CRITICAL, 6.0)));
+                    eq(expectedAlert(AlertSeverity.CRITICAL, z)));
         }
 
         @Test
         void usesAbsoluteValueForNegativeZScore() {
-            publisher.evaluateAnomaly("BTCUSDT", CLOSE, -6.0, null, null, null, TS);
+            double z = -(AnomalyThresholds.CRITICAL + 2.5);
+            publisher.evaluateAnomaly("BTCUSDT", CLOSE, z, null, null, null, TS);
             verify(kafkaTemplate).send(eq(ALERTS_TOPIC), eq("BTCUSDT"),
-                    eq(expectedAlert(AlertSeverity.CRITICAL, -6.0)));
+                    eq(expectedAlert(AlertSeverity.CRITICAL, z)));
             verify(kafkaTemplate).send(eq(MAJOR_TOPIC), eq("BTCUSDT"),
-                    eq(expectedAlert(AlertSeverity.CRITICAL, -6.0)));
+                    eq(expectedAlert(AlertSeverity.CRITICAL, z)));
         }
 
         @Test
         void criticalAnomalyCarriesIndicatorsToTheMajorTopic() {
-            publisher.evaluateAnomaly("BTCUSDT", CLOSE, 6.0,
+            publisher.evaluateAnomaly("BTCUSDT", CLOSE, AnomalyThresholds.CRITICAL + 2.5,
                     new BigDecimal("70000"), new BigDecimal("68000"), 81.3, TS);
 
             ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
