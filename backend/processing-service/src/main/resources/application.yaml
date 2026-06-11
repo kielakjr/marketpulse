@@ -2,7 +2,7 @@ spring:
   application:
     name: processing-service
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: processing-service
       auto-offset-reset: earliest
@@ -15,8 +15,9 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
 
 marketpulse:
   price-window:
@@ -24,3 +25,12 @@ marketpulse:
 
 server:
   port: 8082
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

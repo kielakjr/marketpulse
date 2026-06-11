@@ -20,9 +20,9 @@ public class ProcessedEventPublisher {
     private static final String ALERTS_TOPIC = "market.alerts";
     private static final String MAJOR_ANOMALIES_TOPIC = "market.anomalies.major";
 
-    private static final double ALERT_THRESHOLD = 3.0;
-    private static final double HIGH_THRESHOLD = 4.0;
-    private static final double CRITICAL_THRESHOLD = 5.0;
+    private static final double ALERT_THRESHOLD = 2.0;
+    private static final double HIGH_THRESHOLD = 3.0;
+    private static final double CRITICAL_THRESHOLD = 3.5;
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
