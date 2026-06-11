@@ -3,6 +3,7 @@ package com.marketpulse.explanation.unit.search;
 import com.marketpulse.common.alert.AlertSeverity;
 import com.marketpulse.common.alert.AnomalyAlert;
 import com.marketpulse.explanation.search.SearchResult;
+import com.marketpulse.explanation.search.SearxngProperties;
 import com.marketpulse.explanation.search.SearxngSearchClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import org.springframework.web.client.RestClient;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -30,11 +32,16 @@ class SearxngSearchClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        client = new SearxngSearchClient(builder, "http://searxng:8080");
+        var properties = new SearxngProperties("http://searxng:8080", Map.of("BTCUSDT", "Bitcoin"));
+        client = new SearxngSearchClient(builder, properties);
     }
 
     private AnomalyAlert alert() {
-        return new AnomalyAlert("BTCUSDT", new BigDecimal("73610.36"), 6.2,
+        return alert("BTCUSDT", 6.2);
+    }
+
+    private AnomalyAlert alert(String symbol, double zScore) {
+        return new AnomalyAlert(symbol, new BigDecimal("73610.36"), zScore,
                 AlertSeverity.CRITICAL, null, null, null, Instant.ofEpochMilli(1780135331773L));
     }
 
@@ -57,6 +64,46 @@ class SearxngSearchClientTest {
 
         assertThat(results).hasSize(5);
         assertThat(results.getFirst()).isEqualTo(new SearchResult("t1", "https://e.com/1", "c1"));
+        server.verify();
+    }
+
+    @Test
+    void buildsQueryFromConfiguredAssetNameWithoutSiteFilterOrDate() {
+        server.expect(method(HttpMethod.GET))
+                .andExpect(request -> {
+                    String query = request.getURI().getQuery();
+                    assertThat(query).contains("q=Bitcoin price surge");
+                    assertThat(query).doesNotContain("BTCUSDT");
+                    assertThat(query).doesNotContain("site:");
+                    assertThat(query).doesNotContain("2026");
+                })
+                .andRespond(withSuccess("{\"results\":[]}", MediaType.APPLICATION_JSON));
+
+        client.search(alert());
+        server.verify();
+    }
+
+    @Test
+    void usesDropDirectionForNegativeZScore() {
+        server.expect(method(HttpMethod.GET))
+                .andExpect(request -> assertThat(request.getURI().getQuery()).contains("q=Bitcoin price drop"))
+                .andRespond(withSuccess("{\"results\":[]}", MediaType.APPLICATION_JSON));
+
+        client.search(alert("BTCUSDT", -6.2));
+        server.verify();
+    }
+
+    @Test
+    void fallsBackToStrippedSymbolWhenNotMapped() {
+        server.expect(method(HttpMethod.GET))
+                .andExpect(request -> {
+                    String query = request.getURI().getQuery();
+                    assertThat(query).contains("q=ADA price surge");
+                    assertThat(query).doesNotContain("ADAUSDT");
+                })
+                .andRespond(withSuccess("{\"results\":[]}", MediaType.APPLICATION_JSON));
+
+        client.search(alert("ADAUSDT", 6.2));
         server.verify();
     }
 

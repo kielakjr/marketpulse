@@ -3,14 +3,13 @@ package com.marketpulse.explanation.search;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.marketpulse.common.alert.AnomalyAlert;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Queries a local SearxNG instance for news that might explain a price move.
@@ -22,23 +21,25 @@ import java.util.List;
 public class SearxngSearchClient implements SearchClient {
 
     private static final int MAX_RESULTS = 5;
+    private static final List<String> QUOTE_CURRENCIES = List.of("USDT", "USDC", "BUSD", "USD", "EUR");
 
     private final RestClient restClient;
+    private final Map<String, String> symbolNames;
 
-    public SearxngSearchClient(RestClient.Builder builder,
-                               @Value("${searxng.base-url}") String baseUrl) {
-        this.restClient = builder.baseUrl(baseUrl).build();
+    public SearxngSearchClient(RestClient.Builder builder, SearxngProperties properties) {
+        this.restClient = builder.baseUrl(properties.baseUrl()).build();
+        this.symbolNames = properties.symbolNames();
     }
 
     @Override
     public List<SearchResult> search(AnomalyAlert alert) {
         String direction = alert.zScore() < 0 ? "drop" : "surge";
-        String query = "%s price %s site:coindesk.com OR site:cointelegraph.com %s".formatted(alert.symbol(), direction, LocalDate.now());
+        String query = "%s price %s".formatted(assetName(alert.symbol()), direction);
         try {
             SearxResponse response = restClient.get()
                     .uri(uri -> uri.path("/search")
                             .queryParam("q", query)
-                            .queryParam("time_range", "day")
+                            .queryParam("time_range", "week")
                             .queryParam("categories", "news")
                             .queryParam("format", "json")
                             .build())
@@ -58,6 +59,31 @@ public class SearxngSearchClient implements SearchClient {
                     alert.symbol(), e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * Resolves the asset name to search for. Prefers the configured mapping
+     * (e.g. {@code BTCUSDT -> Bitcoin}); falls back to stripping the quote
+     * currency from the pair (e.g. {@code ADAUSDT -> ADA}).
+     */
+    private String assetName(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return "";
+        }
+        String mapped = symbolNames.get(symbol);
+        if (mapped == null) {
+            mapped = symbolNames.get(symbol.toUpperCase());
+        }
+        if (mapped != null) {
+            return mapped;
+        }
+        String upper = symbol.toUpperCase();
+        for (String quote : QUOTE_CURRENCIES) {
+            if (upper.length() > quote.length() && upper.endsWith(quote)) {
+                return symbol.substring(0, symbol.length() - quote.length());
+            }
+        }
+        return symbol;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

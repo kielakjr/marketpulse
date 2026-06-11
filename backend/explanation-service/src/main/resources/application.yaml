@@ -2,15 +2,16 @@ spring:
   application:
     name: explanation-service
   profiles:
-    active: dev
+    default: dev
   data:
     mongodb:
-      uri: mongodb://localhost:27017/marketpulse
+      uri: ${MONGODB_URI:mongodb://localhost:27017/marketpulse}
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: explanation-service
       auto-offset-reset: earliest
@@ -23,7 +24,23 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 
 searxng:
-  base-url: http://localhost:8888
+  base-url: ${SEARXNG_BASE_URL:http://localhost:8888}
+  symbol-names:
+    BTCUSDT: Bitcoin
+    ETHUSDT: Ethereum
+    SOLUSDT: Solana
+    BNBUSDT: BNB
+    XRPUSDT: XRP
+    DOGEUSDT: Dogecoin
 
 server:
   port: 8085
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
