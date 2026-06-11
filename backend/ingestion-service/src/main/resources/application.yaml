@@ -2,7 +2,7 @@ spring:
   application:
     name: ingestion-service
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
@@ -10,7 +10,20 @@ spring:
 server:
   port: 8081
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 binance:
   symbols:
     - btcusdt
     - ethusdt
+    - solusdt
+    - bnbusdt
+    - xrpusdt
+    - dogeusdt
