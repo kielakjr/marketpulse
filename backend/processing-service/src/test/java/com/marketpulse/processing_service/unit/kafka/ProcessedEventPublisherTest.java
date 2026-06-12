@@ -5,6 +5,7 @@ import com.marketpulse.common.alert.AnomalyAlert;
 import com.marketpulse.common.event.ProcessedEvent;
 import com.marketpulse.processing_service.kafka.AnomalyThresholds;
 import com.marketpulse.processing_service.kafka.ProcessedEventPublisher;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -46,7 +47,7 @@ class ProcessedEventPublisherTest {
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        publisher = new ProcessedEventPublisher(kafkaTemplate);
+        publisher = new ProcessedEventPublisher(kafkaTemplate, new SimpleMeterRegistry());
         lenient().when(kafkaTemplate.send(anyString(), anyString(), any()))
                 .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
     }

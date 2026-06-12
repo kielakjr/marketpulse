@@ -6,6 +6,7 @@ import com.marketpulse.processing_service.indicator.PriceWindow;
 import com.marketpulse.processing_service.kafka.ProcessedEventPublisher;
 import com.marketpulse.processing_service.kafka.TickProcessor;
 import com.marketpulse.processing_service.store.PriceWindowStore;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -46,7 +47,7 @@ class TickProcessorTest {
 
     @BeforeEach
     void setUp() {
-        processor = new TickProcessor(publisher, store);
+        processor = new TickProcessor(publisher, store, new SimpleMeterRegistry());
     }
 
     /** Tick at the given whole-minute offset from MINUTE0 (plus 5s into the minute). */

@@ -3,6 +3,7 @@ package com.marketpulse.processing_service.kafka;
 import com.marketpulse.common.alert.AlertSeverity;
 import com.marketpulse.common.alert.AnomalyAlert;
 import com.marketpulse.common.event.ProcessedEvent;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -25,6 +26,7 @@ public class ProcessedEventPublisher {
     private static final double CRITICAL_THRESHOLD = AnomalyThresholds.CRITICAL;
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final MeterRegistry meterRegistry;
 
     public void publishProcessed(ProcessedEvent event) {
         send(PROCESSED_TOPIC, event.symbol(), event);
@@ -44,6 +46,8 @@ public class ProcessedEventPublisher {
         var alert = new AnomalyAlert(symbol, close, zScore, severity, sma20, sma50, rsi, timestamp);
 
         log.warn("Anomaly detected for {}: z-score={} severity={}", symbol, zScore, severity);
+        meterRegistry.counter("market.anomalies.detected",
+                "symbol", symbol, "severity", severity.name()).increment();
         send(ALERTS_TOPIC, symbol, alert);
 
         if (absZScore > CRITICAL_THRESHOLD) {
